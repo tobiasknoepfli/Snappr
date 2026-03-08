@@ -49,4 +49,30 @@ public partial class MainWindow : Window
         }
     }
 
+    private void SearchBox_GotFocus(object sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox textBox)
+        {
+            textBox.SelectAll();
+        }
+    }
+
+    private void SearchBox_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is TextBox textBox && !textBox.IsKeyboardFocusWithin)
+        {
+            textBox.Focus();
+            e.Handled = true;
+        }
+    }
+
+    private void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (DataContext is MainViewModel vm && vm.IsFullImageMode)
+        {
+            if (e.Key == Key.Right) { vm.NextImageCommand.Execute(null); e.Handled = true; }
+            else if (e.Key == Key.Left) { vm.PreviousImageCommand.Execute(null); e.Handled = true; }
+            else if (e.Key == Key.Escape) { vm.ClosePreviewCommand.Execute(null); e.Handled = true; }
+        }
+    }
 }

@@ -40,6 +40,9 @@ namespace Snappr.ViewModels
             ClosePreviewCommand = new RelayCommand(_ => IsFullImageMode = false);
             OpenPreviewCommand = new RelayCommand(_ => IsFullImageMode = true);
             ClearSearchCommand = new RelayCommand(_ => SearchText = string.Empty);
+            SearchCommand = new RelayCommand(_ => ApplyFilter());
+            NextImageCommand = new RelayCommand(_ => NextImage());
+            PreviousImageCommand = new RelayCommand(_ => PreviousImage());
 
             // Load last session
 
@@ -67,22 +70,7 @@ namespace Snappr.ViewModels
         public string SearchText
         {
             get => _searchText;
-            set
-            {
-                if (SetProperty(ref _searchText, value))
-                {
-                    _searchCts?.Cancel();
-                    _searchCts = new System.Threading.CancellationTokenSource();
-                    var token = _searchCts.Token;
-                    Task.Delay(1000, token).ContinueWith(t => 
-                    {
-                        if (!t.IsCanceled)
-                        {
-                            System.Windows.Application.Current.Dispatcher.InvokeAsync(() => ApplyFilter());
-                        }
-                    }, token);
-                }
-            }
+            set => SetProperty(ref _searchText, value);
         }
 
 
@@ -145,6 +133,9 @@ namespace Snappr.ViewModels
         public ICommand ClosePreviewCommand { get; }
         public ICommand OpenPreviewCommand { get; }
         public ICommand ClearSearchCommand { get; }
+        public ICommand SearchCommand { get; }
+        public ICommand NextImageCommand { get; }
+        public ICommand PreviousImageCommand { get; }
 
 
         private async Task SelectFolder()
@@ -215,7 +206,48 @@ namespace Snappr.ViewModels
         public bool IsDeepScanning
         {
             get => _isDeepScanning;
-            set => SetProperty(ref _isDeepScanning, value);
+            set 
+            {
+                if (SetProperty(ref _isDeepScanning, value))
+                {
+                    OnPropertyChanged(nameof(InProgress));
+                    OnPropertyChanged(nameof(IsProgressBarIndeterminate));
+                }
+            }
+        }
+
+        private bool _isSearching = false;
+        public bool IsSearching
+        {
+            get => _isSearching;
+            set 
+            {
+                if (SetProperty(ref _isSearching, value))
+                {
+                    OnPropertyChanged(nameof(InProgress));
+                    OnPropertyChanged(nameof(IsProgressBarIndeterminate));
+                }
+            }
+        }
+
+        public bool InProgress => IsDeepScanning || IsSearching;
+
+        public bool IsProgressBarIndeterminate => IsDeepScanning && !IsSearching;
+
+        public int TotalImagesCount => _allImages.Count;
+
+        private int _searchProcessedCount;
+        public int SearchProcessedCount
+        {
+            get => _searchProcessedCount;
+            set => SetProperty(ref _searchProcessedCount, value);
+        }
+
+        private int _searchTotalCount;
+        public int SearchTotalCount
+        {
+            get => _searchTotalCount;
+            set => SetProperty(ref _searchTotalCount, value);
         }
 
         private Func<ImageModel, bool> CompileSearch(string searchText)
@@ -356,6 +388,7 @@ namespace Snappr.ViewModels
 
             if (string.IsNullOrWhiteSpace(search))
             {
+                IsSearching = false;
                 IsDeepScanning = false;
                 StatusMessage = "Ready";
                 
@@ -378,19 +411,54 @@ namespace Snappr.ViewModels
             // Simple fast in-memory filtering
             var searchContext = CompileSearch(search);
             StatusMessage = "Searching...";
+            
+            lock (_allImages)
+            {
+                SearchTotalCount = _allImages.Count;
+            }
+            SearchProcessedCount = 0;
+            IsSearching = true;
 
             try 
             {
                 // Find matches in snapshot off-thread to avoid UI freeze
                 var matches = await Task.Run(() => 
                 {
+                    List<ImageModel> snapshot;
                     lock (_allImages)
                     {
-                        return _allImages.Where(i => searchContext(i)).ToList();
+                        snapshot = _allImages.ToList();
                     }
+
+                    var results = new List<ImageModel>();
+
+                    for (int i = 0; i < snapshot.Count; i++)
+                    {
+                        if (token.IsCancellationRequested) return null;
+
+                        if (searchContext(snapshot[i]))
+                        {
+                            results.Add(snapshot[i]);
+                        }
+
+                        // Update every 10 images to make it look "live" for medium/large libraries
+                        if (i % 10 == 0 || i == snapshot.Count - 1)
+                        {
+                            var processed = i + 1;
+                            System.Windows.Application.Current.Dispatcher.InvokeAsync(() => 
+                            {
+                                SearchProcessedCount = processed;
+                            }, System.Windows.Threading.DispatcherPriority.Background);
+                            
+                            // If search is too fast, the UI won't have time to render the changes.
+                            // Task.Yield() allows the scheduler to process other tasks (like UI updates).
+                            if (i % 500 == 0) Task.Yield().GetAwaiter().GetResult();
+                        }
+                    }
+                    return results;
                 }, token);
 
-                if (token.IsCancellationRequested) return;
+                if (token.IsCancellationRequested || matches == null) return;
 
                 // Update UI once with the new collection to avoid multiple notifications
                 FilteredImages = new ObservableCollection<ImageModel>(matches);
@@ -398,6 +466,10 @@ namespace Snappr.ViewModels
             }
             catch (OperationCanceledException) { }
             catch (Exception ex) { Debug.WriteLine(ex.Message); }
+            finally
+            {
+                IsSearching = false;
+            }
         }
 
         // Helper method removed as no longer needed for search walk
@@ -433,6 +505,7 @@ namespace Snappr.ViewModels
                         }
                     }
                 }
+                OnPropertyChanged(nameof(TotalImagesCount));
 
                 _loadedFolders.Add(path);
                 StatusMessage = $"Found {newImages.Count} images. Extracting metadata in background...";
@@ -546,6 +619,26 @@ namespace Snappr.ViewModels
             {
                 OnPropertyChanged(nameof(SelectedCount));
                 OnPropertyChanged(nameof(HasSelection));
+            }
+        }
+
+        private void NextImage()
+        {
+            if (SelectedImage == null || !FilteredImages.Any()) return;
+            int index = FilteredImages.IndexOf(SelectedImage);
+            if (index >= 0 && index < FilteredImages.Count - 1)
+            {
+                SelectedImage = FilteredImages[index + 1];
+            }
+        }
+
+        private void PreviousImage()
+        {
+            if (SelectedImage == null || !FilteredImages.Any()) return;
+            int index = FilteredImages.IndexOf(SelectedImage);
+            if (index > 0)
+            {
+                SelectedImage = FilteredImages[index - 1];
             }
         }
     }

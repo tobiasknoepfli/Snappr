@@ -13,7 +13,8 @@
         Background="#0E0E0E" Foreground="#FFFFFF"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None" AllowsTransparency="True"
-        BorderThickness="1" BorderBrush="#222">
+        BorderThickness="1" BorderBrush="#222"
+        PreviewKeyDown="Window_PreviewKeyDown">
 
     
     <Window.DataContext>
@@ -209,61 +210,72 @@
                     <StackPanel>
                         <TextBlock Text="SEARCH &amp; FILTERS" Style="{StaticResource SectionHeader}"/>
                         <Grid>
-                            <TextBox x:Name="SearchBox" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" 
-                                     Background="#222" Foreground="White" BorderThickness="1" BorderBrush="#333" 
-                                     Padding="10,10,35,10" Margin="0,5">
-                                <TextBox.ToolTip>
-                                    <ToolTip Background="#222" Foreground="White" BorderBrush="#333">
-                                        <StackPanel>
-                                            <TextBlock Text="Search Operators:" FontWeight="Bold" Margin="0,0,0,5"/>
-                                            <TextBlock Text="• Comma (,) : AND (both keywords)"/>
-                                            <TextBlock Text="• Slash (/) : OR (either keyword)"/>
-                                            <TextBlock Text="• Asterisk (*) : Wildcard (any text)"/>
-                                            <TextBlock Text="• gps=location : Search by City/Place"/>
-                                            <TextBlock Text="• name=text : Search exclusively in filename"/>
-                                            <TextBlock Text="• folder=text : Search in folder path"/>
-                                            <TextBlock Text="• date=YYYY-MM-DD / month=N / year=YYYY"/>
-                                            <TextBlock Text="• datebefore=D / dateafter=D / datebetween=D-D"/>
-                                            <TextBlock Text="• &quot;keyword&quot; : Exact match (case insensitive)"/>
-                                            <TextBlock Text="Example: year=2023, folder=italy, &quot;DSC001.jpg&quot;" Margin="0,5,0,0" Foreground="#0078D4"/>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <Grid Grid.Row="0">
+                                <TextBox x:Name="SearchBox" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" 
+                                         Background="#222" Foreground="White" BorderThickness="1" BorderBrush="#333" 
+                                         Padding="10,10,35,10" Margin="0,5"
+                                         GotFocus="SearchBox_GotFocus"
+                                         PreviewMouseLeftButtonDown="SearchBox_PreviewMouseLeftButtonDown">
+                                    <TextBox.InputBindings>
+                                        <KeyBinding Key="Enter" Command="{Binding SearchCommand}"/>
+                                    </TextBox.InputBindings>
+                                    <TextBox.ToolTip>
+                                        <ToolTip Background="#222" Foreground="White" BorderBrush="#333">
+                                            <StackPanel>
+                                                <TextBlock Text="Search Operators:" FontWeight="Bold" Margin="0,0,0,5"/>
+                                                <TextBlock Text="• Comma (,) : AND (both keywords)"/>
+                                                <TextBlock Text="• Slash (/) : OR (either keyword)"/>
+                                                <TextBlock Text="• Asterisk (*) : Wildcard (any text)"/>
+                                                <TextBlock Text="• gps=location : Search by City/Place"/>
+                                                <TextBlock Text="• name=text : Search exclusively in filename"/>
+                                                <TextBlock Text="• folder=text : Search in folder path"/>
+                                                <TextBlock Text="• date=YYYY-MM-DD / month=N / year=YYYY"/>
+                                                <TextBlock Text="• datebefore=D / dateafter=D / datebetween=D-D"/>
+                                                <TextBlock Text="• &quot;keyword&quot; : Exact match (case insensitive)"/>
+                                                <TextBlock Text="Example: year=2023, folder=italy, &quot;DSC001.jpg&quot;" Margin="0,5,0,0" Foreground="#0078D4"/>
+                                            </StackPanel>
+                                        </ToolTip>
+                                    </TextBox.ToolTip>
+                                    <TextBox.Resources>
+                                        <Style TargetType="Border">
+                                            <Setter Property="CornerRadius" Value="4"/>
+                                        </Style>
+                                    </TextBox.Resources>
+                                </TextBox>
+                                
+                                <Button Command="{Binding ClearSearchCommand}" 
+                                        Content="✕" 
+                                        FontSize="14"
+                                        Foreground="#AAA"
+                                        Background="Transparent" 
+                                        BorderThickness="0"
+                                        HorizontalAlignment="Right" 
+                                        VerticalAlignment="Center"
+                                        Margin="0,0,10,0"
+                                        Cursor="Hand"
+                                        Visibility="{Binding SearchText, FallbackValue=Collapsed, Converter={StaticResource NullToVisibilityConverter}}">
 
-
-
-
-                                        </StackPanel>
-                                    </ToolTip>
-                                </TextBox.ToolTip>
-                                <TextBox.Resources>
-                                    <Style TargetType="Border">
-                                        <Setter Property="CornerRadius" Value="4"/>
-                                    </Style>
-                                </TextBox.Resources>
-                            </TextBox>
+                                    <Button.Style>
+                                        <Style TargetType="Button">
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Foreground" Value="White"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
+                            </Grid>
                             
-                            <Button Command="{Binding ClearSearchCommand}" 
-                                    Content="✕" 
-                                    FontSize="14"
-                                    Foreground="#AAA"
-                                    Background="Transparent" 
-                                    BorderThickness="0"
-                                    HorizontalAlignment="Right" 
-                                    VerticalAlignment="Center"
-                                    Margin="0,0,10,0"
-                                    Cursor="Hand"
-                                    Visibility="{Binding SearchText, FallbackValue=Collapsed, Converter={StaticResource NullToVisibilityConverter}}">
-
-                                <Button.Style>
-                                    <Style TargetType="Button">
-                                        <Style.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter Property="Foreground" Value="White"/>
-                                            </Trigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Button.Style>
-                            </Button>
-
-
+                            <Button Grid.Row="1" Command="{Binding SearchCommand}" 
+                                    Content="Search" 
+                                    Style="{StaticResource ModernButton}" 
+                                    HorizontalAlignment="Stretch" 
+                                    Margin="0,2,0,5"/>
                         </Grid>
 
                     </StackPanel>
@@ -316,14 +328,38 @@
 
                     <StackPanel Grid.Row="0" Margin="5,0,0,10">
                         <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="{Binding SelectedCount}" Foreground="#0078D4" FontWeight="Bold" FontSize="16"/>
+                            <TextBlock Text="{Binding SelectedCount}" Foreground="#0078D4" FontWeight="Bold" FontSize="16" Visibility="{Binding HasSelection, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                             <TextBlock Text=" pictures selected" Foreground="#888" VerticalAlignment="Bottom" Margin="5,0,0,2" Visibility="{Binding HasSelection, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                             <TextBlock Text="{Binding FilteredImages.Count}" Foreground="#0078D4" FontWeight="Bold" FontSize="16" Margin="10,0,0,0" Visibility="{Binding HasSelection, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverted}"/>
-                            <TextBlock Text=" pictures total" Foreground="#888" VerticalAlignment="Bottom" Margin="5,0,0,2" Visibility="{Binding HasSelection, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverted}"/>
+                            <TextBlock Text=" findings in " Foreground="#888" VerticalAlignment="Bottom" Margin="5,0,5,2" Visibility="{Binding HasSelection, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverted}"/>
+                            <TextBlock Text="{Binding TotalImagesCount}" Foreground="#0078D4" FontWeight="Bold" FontSize="16" Visibility="{Binding HasSelection, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverted}"/>
+                            <TextBlock Text=" total images" Foreground="#888" VerticalAlignment="Bottom" Margin="5,0,0,2" Visibility="{Binding HasSelection, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverted}"/>
                         </StackPanel>
-                        <!-- Search Progress Wheel -->
-                        <ProgressBar IsIndeterminate="True" Height="2" Background="Transparent" Foreground="#0078D4" BorderThickness="0" Margin="0,5,0,0"
-                                     Visibility="{Binding IsDeepScanning, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                        <!-- Progress Indicator (Scanning/Searching) -->
+                        <Grid Visibility="{Binding InProgress, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,5,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+                            <ProgressBar Grid.Column="0" IsIndeterminate="{Binding IsProgressBarIndeterminate}" Value="{Binding SearchProcessedCount}" Maximum="{Binding SearchTotalCount}" Height="2" Background="Transparent" Foreground="#0078D4" BorderThickness="0"/>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="10,0,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="Searching: " Foreground="#666" FontSize="10" Visibility="{Binding IsSearching, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <TextBlock Text="{Binding SearchProcessedCount}" Foreground="#0078D4" FontSize="10" FontWeight="Bold" Visibility="{Binding IsSearching, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <TextBlock Text=" / " Foreground="#666" FontSize="10" Visibility="{Binding IsSearching, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <TextBlock Text="{Binding SearchTotalCount}" Foreground="#666" FontSize="10" Visibility="{Binding IsSearching, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <TextBlock Text="Indexing..." Foreground="#666" FontSize="10" Visibility="{Binding IsDeepScanning, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsSearching}" Value="True">
+                                                    <Setter Property="Visibility" Value="Collapsed"/>
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </StackPanel>
+                        </Grid>
                     </StackPanel>
 
                     
@@ -449,7 +485,63 @@
                 <Button HorizontalAlignment="Left" Content="← Close Preview" Style="{StaticResource ModernButton}" Command="{Binding ClosePreviewCommand}" Margin="20"/>
                 <TextBlock Grid.Row="0" HorizontalAlignment="Center" Text="{Binding SelectedImage.FileName}" FontSize="20" VerticalAlignment="Center"/>
 
-                <Image Grid.Row="1" Source="{Binding SelectedImage.FilePath}" Stretch="Uniform" Margin="40"/>
+                <Grid Grid.Row="1" Margin="40">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Button Grid.Column="0" Content="&#x2329;" Style="{StaticResource ModernButton}" Command="{Binding PreviousImageCommand}" VerticalAlignment="Center" FontSize="30" Width="60" Height="60" Opacity="0.6" BorderThickness="1" BorderBrush="#444">
+                        <Button.Resources>
+                            <Style TargetType="Border">
+                                <Setter Property="CornerRadius" Value="30"/>
+                            </Style>
+                        </Button.Resources>
+                        <Button.Triggers>
+                            <EventTrigger RoutedEvent="MouseEnter">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1.0" Duration="0:0:0.2"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                            <EventTrigger RoutedEvent="MouseLeave">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0.6" Duration="0:0:0.2"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </Button.Triggers>
+                    </Button>
+                    
+                    <Image Grid.Column="1" Source="{Binding SelectedImage.FilePath}" Stretch="Uniform" Margin="20"/>
+
+                    <Button Grid.Column="2" Content="&#x232A;" Style="{StaticResource ModernButton}" Command="{Binding NextImageCommand}" VerticalAlignment="Center" FontSize="30" Width="60" Height="60" Opacity="0.6" BorderThickness="1" BorderBrush="#444">
+                        <Button.Resources>
+                            <Style TargetType="Border">
+                                <Setter Property="CornerRadius" Value="30"/>
+                            </Style>
+                        </Button.Resources>
+                        <Button.Triggers>
+                            <EventTrigger RoutedEvent="MouseEnter">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetProperty="Opacity" To="1.0" Duration="0:0:0.2"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                            <EventTrigger RoutedEvent="MouseLeave">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0.6" Duration="0:0:0.2"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                        </Button.Triggers>
+                    </Button>
+                </Grid>
             </Grid>
         </Border>
 

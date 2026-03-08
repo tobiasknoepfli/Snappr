@@ -1,7 +1,7 @@
 !include "MUI2.nsh"
 
 Name "Snappr"
-OutFile "V1.1.0\Snappr_Installer_V1.1.0.exe"
+OutFile "Publish\V1.2.0\Snappr_Installer_V1.2.0.exe"
 InstallDir "$PROGRAMFILES64\Snappr"
 InstallDirRegKey HKCU "Software\Snappr" ""
 
@@ -24,7 +24,7 @@ RequestExecutionLevel admin
 Section "Snappr Application" SecApp
     SectionIn RO
     SetOutPath "$INSTDIR"
-    File /r "V1.1.0\bin\*.*"
+    File /r "Publish\V1.2.0\bin\*.*"
 
     WriteUninstaller "$INSTDIR\uninstall.exe"
     WriteRegStr HKCU "Software\Snappr" "" $INSTDIR
