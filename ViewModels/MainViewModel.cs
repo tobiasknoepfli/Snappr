@@ -74,11 +74,11 @@ namespace Snappr.ViewModels
                     _searchCts?.Cancel();
                     _searchCts = new System.Threading.CancellationTokenSource();
                     var token = _searchCts.Token;
-                    Task.Delay(300, token).ContinueWith(t => 
+                    Task.Delay(1000, token).ContinueWith(t => 
                     {
                         if (!t.IsCanceled)
                         {
-                            System.Windows.Application.Current.Dispatcher.Invoke(() => ApplyFilter());
+                            System.Windows.Application.Current.Dispatcher.InvokeAsync(() => ApplyFilter());
                         }
                     }, token);
                 }
@@ -135,6 +135,9 @@ namespace Snappr.ViewModels
             set => SetProperty(ref _statusMessage, value);
         }
 
+        public int SelectedCount => _allImages.Count(i => i.IsSelected);
+        public bool HasSelection => SelectedCount > 0;
+
         public ICommand SelectFolderCommand { get; }
         public ICommand ExportCommand { get; }
         public ICommand OpenInExplorerCommand { get; }
@@ -160,12 +163,40 @@ namespace Snappr.ViewModels
         private async void InitializeFolder(string path)
         {
             SourceFolder = path;
-            _allImages.Clear();
-            _allImagesLookup.Clear();
-            _loadedFolders.Clear();
+            lock (_allImages)
+            {
+                _allImages.Clear();
+                _allImagesLookup.Clear();
+                _loadedFolders.Clear();
+            }
 
+            // Perform initial fast scan of current folder
             await LoadImages(path, false);
             LoadFolderTree(path);
+
+            // Trigger background recursive scan of EVERYTHING to build index
+            _ = ScanEverythingBackground(path);
+        }
+
+        private async Task ScanEverythingBackground(string path)
+        {
+            IsDeepScanning = true;
+            StatusMessage = "Indexing subfolders...";
+            try
+            {
+                // Background scan should NOT set IsBusy (which shows the overlay)
+                await LoadImages(path, true, showOverlay: false);
+                StatusMessage = "Indexing complete.";
+            }
+            catch (Exception ex)
+            {
+                StatusMessage = $"Indexing error: {ex.Message}";
+            }
+            finally
+            {
+                IsDeepScanning = false;
+                ApplyFilter(); // Refresh view
+            }
         }
 
 
@@ -205,56 +236,75 @@ namespace Snappr.ViewModels
 
             foreach (var group in logicGroups)
             {
-                var currentGroup = group; // Local copy for closure
+                var currentGroup = group; 
                 var andPredicates = new List<Func<ImageModel, bool>>();
                 foreach (var term in currentGroup)
                 {
-                    var currentTerm = term; // Local copy for closure
-                    if (currentTerm.StartsWith("gps=", StringComparison.OrdinalIgnoreCase))
+                    var currentTerm = term; 
+                    
+                    // Handle exact match (quotes)
+                    bool isExact = currentTerm.StartsWith("\"") && currentTerm.EndsWith("\"") && currentTerm.Length >= 2;
+                    string effectiveTerm = isExact ? currentTerm.Substring(1, currentTerm.Length - 2) : currentTerm;
+
+                    if (effectiveTerm.StartsWith("gps=", StringComparison.OrdinalIgnoreCase))
                     {
-                        var val = currentTerm.Substring(4).Trim();
+                        var val = effectiveTerm.Substring(4).Trim();
                         andPredicates.Add(img => img.Location != null && img.Location.Contains(val, StringComparison.OrdinalIgnoreCase));
                     }
-                    else if (currentTerm.StartsWith("name=", StringComparison.OrdinalIgnoreCase))
+                    else if (effectiveTerm.StartsWith("name=", StringComparison.OrdinalIgnoreCase))
                     {
-                        var val = currentTerm.Substring(5).Trim();
-                        var regex = new Regex(val.Contains("*") ? "^" + Regex.Escape(val).Replace("\\*", ".*") + "$" : Regex.Escape(val), RegexOptions.IgnoreCase | RegexOptions.Compiled);
-                        andPredicates.Add(img => !string.IsNullOrEmpty(img.FileName) && regex.IsMatch(img.FileName));
+                        var val = effectiveTerm.Substring(5).Trim();
+                        if (isExact)
+                        {
+                            andPredicates.Add(img => string.Equals(img.FileName, val, StringComparison.OrdinalIgnoreCase));
+                        }
+                        else
+                        {
+                            var regex = new Regex(val.Contains("*") ? "^" + Regex.Escape(val).Replace("\\*", ".*") + "$" : Regex.Escape(val), RegexOptions.IgnoreCase);
+                            andPredicates.Add(img => !string.IsNullOrEmpty(img.FileName) && regex.IsMatch(img.FileName));
+                        }
                     }
-                    else if (currentTerm.StartsWith("folder=", StringComparison.OrdinalIgnoreCase))
+                    else if (effectiveTerm.StartsWith("folder=", StringComparison.OrdinalIgnoreCase))
                     {
-                        var val = currentTerm.Substring(7).Trim();
-                        var regex = new Regex(val.Contains("*") ? "^" + Regex.Escape(val).Replace("\\*", ".*") + "$" : Regex.Escape(val), RegexOptions.IgnoreCase | RegexOptions.Compiled);
-                        andPredicates.Add(img => !string.IsNullOrEmpty(img.FolderPath) && regex.IsMatch(img.FolderPath));
+                        var val = effectiveTerm.Substring(7).Trim();
+                        if (isExact)
+                        {
+                            andPredicates.Add(img => string.Equals(img.FolderPath, val, StringComparison.OrdinalIgnoreCase));
+                        }
+                        else
+                        {
+                            var regex = new Regex(val.Contains("*") ? "^" + Regex.Escape(val).Replace("\\*", ".*") + "$" : Regex.Escape(val), RegexOptions.IgnoreCase);
+                            andPredicates.Add(img => !string.IsNullOrEmpty(img.FolderPath) && regex.IsMatch(img.FolderPath));
+                        }
                     }
-                    else if (currentTerm.StartsWith("date=", StringComparison.OrdinalIgnoreCase))
+                    else if (effectiveTerm.StartsWith("date=", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (DateTime.TryParse(currentTerm.Substring(5), out var d)) andPredicates.Add(img => img.DateTaken?.Date == d.Date);
+                        if (DateTime.TryParse(effectiveTerm.Substring(5), out var d)) andPredicates.Add(img => img.DateTaken?.Date == d.Date);
                         else andPredicates.Add(_ => false);
                     }
-                    else if (currentTerm.StartsWith("month=", StringComparison.OrdinalIgnoreCase))
+                    else if (effectiveTerm.StartsWith("month=", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (int.TryParse(currentTerm.Substring(6), out var m)) andPredicates.Add(img => img.DateTaken?.Month == m);
+                        if (int.TryParse(effectiveTerm.Substring(6), out var m)) andPredicates.Add(img => img.DateTaken?.Month == m);
                         else andPredicates.Add(_ => false);
                     }
-                    else if (currentTerm.StartsWith("year=", StringComparison.OrdinalIgnoreCase))
+                    else if (effectiveTerm.StartsWith("year=", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (int.TryParse(currentTerm.Substring(5), out var y)) andPredicates.Add(img => img.DateTaken?.Year == y);
+                        if (int.TryParse(effectiveTerm.Substring(5), out var y)) andPredicates.Add(img => img.DateTaken?.Year == y);
                         else andPredicates.Add(_ => false);
                     }
-                    else if (currentTerm.StartsWith("datebefore=", StringComparison.OrdinalIgnoreCase))
+                    else if (effectiveTerm.StartsWith("datebefore=", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (DateTime.TryParse(currentTerm.Substring(11), out var d)) andPredicates.Add(img => img.DateTaken?.Date <= d.Date);
+                        if (DateTime.TryParse(effectiveTerm.Substring(11), out var d)) andPredicates.Add(img => img.DateTaken?.Date <= d.Date);
                         else andPredicates.Add(_ => false);
                     }
-                    else if (currentTerm.StartsWith("dateafter=", StringComparison.OrdinalIgnoreCase))
+                    else if (effectiveTerm.StartsWith("dateafter=", StringComparison.OrdinalIgnoreCase))
                     {
-                        if (DateTime.TryParse(currentTerm.Substring(10), out var d)) andPredicates.Add(img => img.DateTaken?.Date >= d.Date);
+                        if (DateTime.TryParse(effectiveTerm.Substring(10), out var d)) andPredicates.Add(img => img.DateTaken?.Date >= d.Date);
                         else andPredicates.Add(_ => false);
                     }
-                    else if (currentTerm.StartsWith("datebetween=", StringComparison.OrdinalIgnoreCase))
+                    else if (effectiveTerm.StartsWith("datebetween=", StringComparison.OrdinalIgnoreCase))
                     {
-                        var s = currentTerm.Substring(12).Trim();
+                        var s = effectiveTerm.Substring(12).Trim();
                         DateTime? d1 = null, d2 = null;
                         for (int i = 1; i < s.Length - 1; i++) {
                             if (s[i] == '-' && DateTime.TryParse(s.Substring(0, i).Trim(), out var dt1) && DateTime.TryParse(s.Substring(i + 1).Trim(), out var dt2)) {
@@ -266,11 +316,22 @@ namespace Snappr.ViewModels
                     }
                     else
                     {
-                        var regex = new Regex(currentTerm.Contains("*") ? "^" + Regex.Escape(currentTerm).Replace("\\*", ".*") + "$" : Regex.Escape(currentTerm), RegexOptions.IgnoreCase | RegexOptions.Compiled);
-                        andPredicates.Add(img => 
-                            (img.FileName != null && regex.IsMatch(img.FileName)) || 
-                            (img.Keywords != null && img.Keywords.Any(k => k != null && regex.IsMatch(k))) ||
-                            (img.Location != null && regex.IsMatch(img.Location)));
+                        if (isExact)
+                        {
+                            andPredicates.Add(img => 
+                                (img.FileName != null && string.Equals(img.FileName, effectiveTerm, StringComparison.OrdinalIgnoreCase)) || 
+                                (img.Keywords != null && img.Keywords.Any(k => string.Equals(k, effectiveTerm, StringComparison.OrdinalIgnoreCase))) ||
+                                (img.Location != null && string.Equals(img.Location, effectiveTerm, StringComparison.OrdinalIgnoreCase)));
+                        }
+                        else
+                        {
+                            var regexString = effectiveTerm.Contains("*") ? "^" + Regex.Escape(effectiveTerm).Replace("\\*", ".*") + "$" : Regex.Escape(effectiveTerm);
+                            var regex = new Regex(regexString, RegexOptions.IgnoreCase);
+                            andPredicates.Add(img => 
+                                (img.FileName != null && regex.IsMatch(img.FileName)) || 
+                                (img.Keywords != null && img.Keywords.Any(k => k != null && regex.IsMatch(k))) ||
+                                (img.Location != null && regex.IsMatch(img.Location)));
+                        }
                     }
                 }
                 var capturedAnds = andPredicates.ToList();
@@ -287,138 +348,60 @@ namespace Snappr.ViewModels
 
         private async void ApplyFilter()
         {
-
             var search = SearchText.Trim();
             
             _searchCts?.Cancel();
             _searchCts = new System.Threading.CancellationTokenSource();
             var token = _searchCts.Token;
 
-            // Clear current view
-            FilteredImages.Clear();
-
             if (string.IsNullOrWhiteSpace(search))
             {
                 IsDeepScanning = false;
+                StatusMessage = "Ready";
+                
                 if (SelectedFolderNode != null)
                 {
-                    if (!_loadedFolders.Contains(SelectedFolderNode.FullPath))
+                    List<ImageModel> folderImages;
+                    lock (_allImages)
                     {
-                        await LoadImages(SelectedFolderNode.FullPath, false);
+                        folderImages = _allImages.Where(i => i.FolderPath == SelectedFolderNode.FullPath).ToList();
                     }
-                    var folderImages = _allImages.Where(i => i.FolderPath == SelectedFolderNode.FullPath).ToList();
-                    foreach (var img in folderImages) FilteredImages.Add(img);
+                    FilteredImages = new ObservableCollection<ImageModel>(folderImages);
+                }
+                else
+                {
+                    FilteredImages = new ObservableCollection<ImageModel>();
                 }
                 return;
             }
 
-            // Compiled Search Context for max speed
+            // Simple fast in-memory filtering
             var searchContext = CompileSearch(search);
-            IsDeepScanning = true;
-
             StatusMessage = "Searching...";
-            _ = Task.Run(async () => 
+
+            try 
             {
-                try 
+                // Find matches in snapshot off-thread to avoid UI freeze
+                var matches = await Task.Run(() => 
                 {
-                    var addedFiles = new System.Collections.Concurrent.ConcurrentDictionary<string, byte>(StringComparer.OrdinalIgnoreCase);
-                    
-                    // Trigger metadata enrichment if any term looks for keywords, location, or dates
-                    bool needsEnrichment = search.Split(new[] { ',', '/', ' ' }, StringSplitOptions.RemoveEmptyEntries)
-                        .Any(t => !t.StartsWith("name=", StringComparison.OrdinalIgnoreCase) && 
-                                 !t.StartsWith("folder=", StringComparison.OrdinalIgnoreCase));
-
-                    // 1. Process library
-
-                    List<ImageModel> snapshot;
-                    HashSet<string> existingPaths;
                     lock (_allImages)
                     {
-                        snapshot = _allImages.ToList();
-                        existingPaths = new HashSet<string>(_allImagesLookup.Keys, StringComparer.OrdinalIgnoreCase);
+                        return _allImages.Where(i => searchContext(i)).ToList();
                     }
+                }, token);
 
-                    var matches = snapshot.AsParallel().WithCancellation(token).Where(i => searchContext(i)).ToList();
-                    if (matches.Any())
-                    {
-                        await System.Windows.Application.Current.Dispatcher.InvokeAsync(() => {
-                            foreach (var img in matches) {
-                                if (token.IsCancellationRequested) return;
-                                if (addedFiles.TryAdd(img.FilePath, 0)) FilteredImages.Add(img);
-                            }
-                        }, System.Windows.Threading.DispatcherPriority.Background);
-                    }
+                if (token.IsCancellationRequested) return;
 
-                    // 2. Scan folders if needed
-                    if (string.IsNullOrEmpty(SourceFolder) || !Directory.Exists(SourceFolder))
-                    {
-                        await System.Windows.Application.Current.Dispatcher.InvokeAsync(() => StatusMessage = "Ready");
-                        return;
-                    }
-
-                    var allFiles = Directory.EnumerateFiles(SourceFolder, "*.*", SearchOption.AllDirectories);
-                    var batch = new System.Collections.Concurrent.ConcurrentBag<ImageModel>();
-                    
-                    try {
-                        Parallel.ForEach(allFiles, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount, CancellationToken = token }, (file) => {
-                            var ext = Path.GetExtension(file).ToLower();
-                            if (!ImageService.SupportedExtensions.Contains(ext)) return;
-
-                            if (existingPaths.Contains(file)) return;
-
-                            var target = new ImageModel { 
-                                FilePath = file, 
-                                FileName = Path.GetFileName(file) ?? "Unknown",
-                                FolderPath = Path.GetDirectoryName(file) ?? "Unknown",
-                                MetadataSummary = "Pending..."
-                            };
-
-                            bool matchesSearch = searchContext(target);
-                            if (!matchesSearch && needsEnrichment)
-                            {
-                                _imageService.EnrichMetadataAsync(target).Wait();
-                                matchesSearch = searchContext(target);
-                            }
-
-                            if (matchesSearch && addedFiles.TryAdd(file, 0))
-                            {
-                                batch.Add(target);
-                                if (batch.Count >= 30) FlushBatch(batch);
-                            }
-                        });
-                    } catch (OperationCanceledException) { }
-
-                    FlushBatch(batch);
-                }
-                catch (Exception ex) { Debug.WriteLine(ex.Message); }
-                finally 
-                { 
-                    System.Windows.Application.Current.Dispatcher.Invoke(() => {
-                        IsDeepScanning = false;
-                        StatusMessage = $"Found {FilteredImages.Count} results";
-                    });
-                }
-            }, token);
+                // Update UI once with the new collection to avoid multiple notifications
+                FilteredImages = new ObservableCollection<ImageModel>(matches);
+                StatusMessage = $"Found {FilteredImages.Count} results";
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception ex) { Debug.WriteLine(ex.Message); }
         }
 
-        private void FlushBatch(System.Collections.Concurrent.ConcurrentBag<ImageModel> batch)
-        {
-            var toFlush = new List<ImageModel>();
-            while (batch.TryTake(out var item) && toFlush.Count < 50) toFlush.Add(item);
-            if (!toFlush.Any()) return;
-
-            System.Windows.Application.Current.Dispatcher.InvokeAsync(() => {
-                foreach (var img in toFlush) {
-                    lock (_allImages) {
-                        if (!_allImagesLookup.ContainsKey(img.FilePath)) {
-                            _allImages.Add(img);
-                            _allImagesLookup[img.FilePath] = img;
-                        }
-                    }
-                    FilteredImages.Add(img);
-                }
-            }, System.Windows.Threading.DispatcherPriority.Background);
-        }
+        // Helper method removed as no longer needed for search walk
+        private void FlushBatch(System.Collections.Concurrent.ConcurrentBag<ImageModel> batch) { }
 
 
 
@@ -429,11 +412,11 @@ namespace Snappr.ViewModels
 
 
 
-        private async Task LoadImages(string path, bool recursive = false)
+        private async Task LoadImages(string path, bool recursive = false, bool showOverlay = true)
         {
             if (_loadedFolders.Contains(path) && !recursive) return;
             
-            IsBusy = true;
+            if (showOverlay) IsBusy = true;
             StatusMessage = $"Scanning {Path.GetFileName(path)}...";
             try
             {
@@ -444,6 +427,7 @@ namespace Snappr.ViewModels
                     {
                         if (!_allImagesLookup.ContainsKey(img.FilePath))
                         {
+                            img.PropertyChanged += ImageModel_PropertyChanged;
                             _allImages.Add(img);
                             _allImagesLookup[img.FilePath] = img;
                         }
@@ -472,7 +456,7 @@ namespace Snappr.ViewModels
             }
             finally
             {
-                IsBusy = false;
+                if (showOverlay) IsBusy = false;
                 ApplyFilter();
             }
         }
@@ -480,7 +464,13 @@ namespace Snappr.ViewModels
 
         private async Task ExportImage(string? mode)
         {
-            if (SelectedImage == null || mode == null) return;
+            var selectedImages = _allImages.Where(i => i.IsSelected).ToList();
+            if (!selectedImages.Any() && SelectedImage != null)
+            {
+                selectedImages.Add(SelectedImage);
+            }
+
+            if (!selectedImages.Any() || mode == null) return;
 
             double scale = 1.0;
             switch (mode)
@@ -488,27 +478,38 @@ namespace Snappr.ViewModels
                 case "Half": scale = 0.5; break;
                 case "Quarter": scale = 0.25; break;
                 case "Custom":
-                    // For brevity, let's assume 10% in this mock but in real app we'd ask
                     scale = 0.1; 
                     break;
                 default: scale = 1.0; break;
             }
 
 
-            var saveDialog = new SaveFileDialog
+            var picker = new Snappr.Views.FolderPickerWindow
             {
-                FileName = Path.GetFileNameWithoutExtension(SelectedImage.FileName) + $"_{mode}" + Path.GetExtension(SelectedImage.FileName),
-                Filter = "Image Files|*.jpg;*.png;*.bmp"
+                Owner = System.Windows.Application.Current.MainWindow
             };
 
-            if (saveDialog.ShowDialog() == true)
+            if (picker.ShowDialog() == true)
             {
+                var targetFolder = picker.SelectedPath;
                 IsBusy = true;
-                StatusMessage = "Exporting...";
+                
+                int total = selectedImages.Count;
+                int current = 0;
+
                 try
                 {
-                    await _imageService.ExportImageAsync(SelectedImage.FilePath, saveDialog.FileName, scale);
-                    StatusMessage = "Export complete.";
+                    foreach (var img in selectedImages)
+                    {
+                        current++;
+                        StatusMessage = $"Exporting {current}/{total}: {img.FileName}...";
+                        
+                        var fileName = Path.GetFileNameWithoutExtension(img.FileName) + $"_{mode}" + Path.GetExtension(img.FileName);
+                        var targetPath = Path.Combine(targetFolder, fileName);
+                        
+                        await _imageService.ExportImageAsync(img.FilePath, targetPath, scale);
+                    }
+                    StatusMessage = $"Export of {total} images complete.";
                 }
                 catch (Exception ex)
                 {
@@ -532,10 +533,19 @@ namespace Snappr.ViewModels
             if (_allImages.Any())
             {
                 var folder = Path.GetDirectoryName(_allImages.First().FilePath);
-                if (Directory.Exists(folder))
+                if (folder != null && Directory.Exists(folder))
                 {
                     await LoadImages(folder);
                 }
+            }
+        }
+
+        private void ImageModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(ImageModel.IsSelected))
+            {
+                OnPropertyChanged(nameof(SelectedCount));
+                OnPropertyChanged(nameof(HasSelection));
             }
         }
     }

@@ -30,7 +30,13 @@ namespace Snappr.Models
         public double? Longitude { get; set; }
 
 
-        
+        private bool _isSelected;
+        public bool IsSelected 
+        { 
+            get => _isSelected; 
+            set => SetProperty(ref _isSelected, value); 
+        }
+
         // UI Helpers
         public string DisplayKeywords => string.Join(", ", Keywords);
     }
