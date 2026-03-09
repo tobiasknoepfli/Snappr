@@ -7,6 +7,7 @@ namespace Snappr.Services
     public class AppSettings
     {
         public string LastSourceFolder { get; set; } = string.Empty;
+        public System.Collections.Generic.HashSet<string> SensitiveImagePaths { get; set; } = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
     }
 
     public static class SettingsService

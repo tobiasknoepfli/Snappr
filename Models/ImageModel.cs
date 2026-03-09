@@ -22,7 +22,13 @@ namespace Snappr.Models
         public string MetadataSummary 
         { 
             get => _metadataSummary; 
-            set => SetProperty(ref _metadataSummary, value); 
+            set 
+            {
+                if (SetProperty(ref _metadataSummary, value))
+                {
+                    OnPropertyChanged(nameof(DisplayKeywords));
+                }
+            }
         }
 
         public string Location { get; set; } = string.Empty;
@@ -37,6 +43,14 @@ namespace Snappr.Models
             set => SetProperty(ref _isSelected, value); 
         }
 
+
+        private bool _isSensitive;
+        public bool IsSensitive
+        {
+            get => _isSensitive;
+            set => SetProperty(ref _isSensitive, value);
+        }
+        
         // UI Helpers
         public string DisplayKeywords => string.Join(", ", Keywords);
     }

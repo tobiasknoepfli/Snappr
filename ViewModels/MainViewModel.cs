@@ -21,6 +21,8 @@ namespace Snappr.ViewModels
         private Dictionary<string, ImageModel> _allImagesLookup = new Dictionary<string, ImageModel>(StringComparer.OrdinalIgnoreCase);
         private ObservableCollection<ImageModel> _filteredImages = new ObservableCollection<ImageModel>();
 
+        private AppSettings _settings;
+
         private ImageModel? _selectedImage;
         private string _searchText = string.Empty;
         private bool _isBusy;
@@ -30,6 +32,9 @@ namespace Snappr.ViewModels
         private ObservableCollection<FolderNode> _folderTree = new ObservableCollection<FolderNode>();
         private FolderNode? _selectedFolderNode;
         private bool _isFullImageMode;
+        private bool _isOriginalSize;
+        private double _zoomLevel = 1.0;
+        private bool _isFitToWindow = true;
 
         public MainViewModel()
         {
@@ -43,13 +48,16 @@ namespace Snappr.ViewModels
             SearchCommand = new RelayCommand(_ => ApplyFilter());
             NextImageCommand = new RelayCommand(_ => NextImage());
             PreviousImageCommand = new RelayCommand(_ => PreviousImage());
+            SetSensitiveCommand = new RelayCommand(p => SetSensitiveForSelection(p));
+            ZoomInCommand = new RelayCommand(_ => ZoomIn());
+            ZoomOutCommand = new RelayCommand(_ => ZoomOut());
+            ResetZoomCommand = new RelayCommand(_ => ResetZoom());
+            CancelSearchCommand = new RelayCommand(_ => CancelSearch());
 
-            // Load last session
-
-            var settings = SettingsService.Load();
-            if (!string.IsNullOrEmpty(settings.LastSourceFolder) && Directory.Exists(settings.LastSourceFolder))
+            _settings = SettingsService.Load();
+            if (!string.IsNullOrEmpty(_settings.LastSourceFolder) && Directory.Exists(_settings.LastSourceFolder))
             {
-                InitializeFolder(settings.LastSourceFolder);
+                InitializeFolder(_settings.LastSourceFolder);
             }
         }
 
@@ -81,7 +89,8 @@ namespace Snappr.ViewModels
             {
                 if (SetProperty(ref _sourceFolder, value))
                 {
-                    SettingsService.Save(new AppSettings { LastSourceFolder = value });
+                    _settings.LastSourceFolder = value;
+                    SettingsService.Save(_settings);
                 }
             }
         }
@@ -105,10 +114,58 @@ namespace Snappr.ViewModels
             }
         }
 
+        public bool IsOriginalSize
+        {
+            get => _isOriginalSize;
+            set 
+            {
+                if (SetProperty(ref _isOriginalSize, value))
+                {
+                    if (value) IsFitToWindow = false;
+                }
+            }
+        }
+
         public bool IsFullImageMode
         {
             get => _isFullImageMode;
-            set => SetProperty(ref _isFullImageMode, value);
+            set 
+            {
+                if (SetProperty(ref _isFullImageMode, value))
+                {
+                    if (!value) ResetZoom();
+                }
+            }
+        }
+
+        public bool IsFitToWindow
+        {
+            get => _isFitToWindow;
+            set 
+            {
+                if (SetProperty(ref _isFitToWindow, value))
+                {
+                    if (value)
+                    {
+                        _isOriginalSize = false;
+                        _zoomLevel = 1.0;
+                        OnPropertyChanged(nameof(IsOriginalSize));
+                        OnPropertyChanged(nameof(ZoomLevel));
+                    }
+                }
+            }
+        }
+
+        public double ZoomLevel
+        {
+            get => _zoomLevel;
+            set 
+            {
+                if (SetProperty(ref _zoomLevel, value))
+                {
+                    if (value != 1.0) IsFitToWindow = false;
+                }
+            }
         }
 
         public bool IsBusy
@@ -124,7 +181,7 @@ namespace Snappr.ViewModels
         }
 
         public int SelectedCount => _allImages.Count(i => i.IsSelected);
-        public bool HasSelection => SelectedCount > 0;
+        public bool HasSelection => SelectedCount > 1;
 
         public ICommand SelectFolderCommand { get; }
         public ICommand ExportCommand { get; }
@@ -136,6 +193,11 @@ namespace Snappr.ViewModels
         public ICommand SearchCommand { get; }
         public ICommand NextImageCommand { get; }
         public ICommand PreviousImageCommand { get; }
+        public ICommand SetSensitiveCommand { get; }
+        public ICommand ZoomInCommand { get; }
+        public ICommand ZoomOutCommand { get; }
+        public ICommand ResetZoomCommand { get; }
+        public ICommand CancelSearchCommand { get; }
 
 
         private async Task SelectFolder()
@@ -252,7 +314,11 @@ namespace Snappr.ViewModels
 
         private Func<ImageModel, bool> CompileSearch(string searchText)
         {
-            if (string.IsNullOrWhiteSpace(searchText)) return _ => true;
+            if (string.IsNullOrWhiteSpace(searchText)) return _ => !_.IsSensitive;
+
+            string normalized = searchText.ToLower();
+            bool hasExplicitSensitivity = normalized.Contains("sensitive=") || normalized.Contains("private=");
+            bool globalUnlock = normalized.Contains("sensitive=on") || normalized.Contains("private=on");
 
             var logicGroups = searchText.Split('/', StringSplitOptions.RemoveEmptyEntries)
                 .Select(g => g.Split(',', StringSplitOptions.RemoveEmptyEntries)
@@ -262,15 +328,16 @@ namespace Snappr.ViewModels
                 .Where(g => g.Any())
                 .ToList();
 
-            if (!logicGroups.Any()) return _ => true;
+            if (!logicGroups.Any()) return img => globalUnlock || !img.IsSensitive;
 
             var orPredicates = new List<Func<ImageModel, bool>>();
 
             foreach (var group in logicGroups)
             {
-                var currentGroup = group; 
                 var andPredicates = new List<Func<ImageModel, bool>>();
-                foreach (var term in currentGroup)
+                bool groupHasSensitivity = false;
+
+                foreach (var term in group)
                 {
                     var currentTerm = term; 
                     
@@ -278,7 +345,15 @@ namespace Snappr.ViewModels
                     bool isExact = currentTerm.StartsWith("\"") && currentTerm.EndsWith("\"") && currentTerm.Length >= 2;
                     string effectiveTerm = isExact ? currentTerm.Substring(1, currentTerm.Length - 2) : currentTerm;
 
-                    if (effectiveTerm.StartsWith("gps=", StringComparison.OrdinalIgnoreCase))
+                    if (effectiveTerm.StartsWith("sensitive=", StringComparison.OrdinalIgnoreCase) || 
+                        effectiveTerm.StartsWith("private=", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var val = effectiveTerm.Substring(effectiveTerm.IndexOf('=') + 1).Trim().ToLower();
+                        if (val == "on") andPredicates.Add(img => img.IsSensitive);
+                        else andPredicates.Add(img => !img.IsSensitive);
+                        groupHasSensitivity = true;
+                    }
+                    else if (effectiveTerm.StartsWith("gps=", StringComparison.OrdinalIgnoreCase))
                     {
                         var val = effectiveTerm.Substring(4).Trim();
                         andPredicates.Add(img => img.Location != null && img.Location.Contains(val, StringComparison.OrdinalIgnoreCase));
@@ -366,6 +441,12 @@ namespace Snappr.ViewModels
                         }
                     }
                 }
+
+                if (!groupHasSensitivity && !globalUnlock)
+                {
+                    andPredicates.Add(img => !img.IsSensitive);
+                }
+
                 var capturedAnds = andPredicates.ToList();
                 orPredicates.Add(img => img != null && capturedAnds.All(p => p(img)));
             }
@@ -392,12 +473,15 @@ namespace Snappr.ViewModels
                 IsDeepScanning = false;
                 StatusMessage = "Ready";
                 
+                ClearSelection();
+                SelectedImage = null;
+                
                 if (SelectedFolderNode != null)
                 {
                     List<ImageModel> folderImages;
                     lock (_allImages)
                     {
-                        folderImages = _allImages.Where(i => i.FolderPath == SelectedFolderNode.FullPath).ToList();
+                        folderImages = _allImages.Where(i => i.FolderPath == SelectedFolderNode.FullPath && !i.IsSensitive).ToList();
                     }
                     FilteredImages = new ObservableCollection<ImageModel>(folderImages);
                 }
@@ -418,6 +502,9 @@ namespace Snappr.ViewModels
             }
             SearchProcessedCount = 0;
             IsSearching = true;
+
+            ClearSelection();
+            SelectedImage = null;
 
             try 
             {
@@ -458,9 +545,16 @@ namespace Snappr.ViewModels
                     return results;
                 }, token);
 
-                if (token.IsCancellationRequested || matches == null) return;
+                if (token.IsCancellationRequested || matches == null)
+                {
+                    if (matches != null)
+                    {
+                        FilteredImages = new ObservableCollection<ImageModel>(matches);
+                        StatusMessage = $"Search cancelled. Found {FilteredImages.Count} results so far.";
+                    }
+                    return;
+                }
 
-                // Update UI once with the new collection to avoid multiple notifications
                 FilteredImages = new ObservableCollection<ImageModel>(matches);
                 StatusMessage = $"Found {FilteredImages.Count} results";
             }
@@ -469,6 +563,8 @@ namespace Snappr.ViewModels
             finally
             {
                 IsSearching = false;
+                OnPropertyChanged(nameof(SelectedCount));
+                OnPropertyChanged(nameof(HasSelection));
             }
         }
 
@@ -500,6 +596,7 @@ namespace Snappr.ViewModels
                         if (!_allImagesLookup.ContainsKey(img.FilePath))
                         {
                             img.PropertyChanged += ImageModel_PropertyChanged;
+                            img.IsSensitive = _settings.SensitiveImagePaths.Contains(img.FilePath);
                             _allImages.Add(img);
                             _allImagesLookup[img.FilePath] = img;
                         }
@@ -601,6 +698,23 @@ namespace Snappr.ViewModels
             Process.Start("explorer.exe", $"/select,\"{SelectedImage.FilePath}\"");
         }
 
+        private void SetSensitiveForSelection(object? parameter)
+        {
+            if (parameter == null) return;
+            bool isSensitive = parameter.ToString()?.ToLower() == "true";
+            
+            var selectedImages = _allImages.Where(i => i.IsSelected).ToList();
+            if (!selectedImages.Any() && SelectedImage != null)
+            {
+                selectedImages.Add(SelectedImage);
+            }
+
+            foreach (var img in selectedImages)
+            {
+                img.IsSensitive = isSensitive;
+            }
+        }
+
         private async Task Refresh()
         {
             if (_allImages.Any())
@@ -615,31 +729,78 @@ namespace Snappr.ViewModels
 
         private void ImageModel_PropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
         {
+            var img = sender as ImageModel;
+            if (img == null) return;
+
             if (e.PropertyName == nameof(ImageModel.IsSelected))
             {
                 OnPropertyChanged(nameof(SelectedCount));
                 OnPropertyChanged(nameof(HasSelection));
+            }
+            else if (e.PropertyName == nameof(ImageModel.IsSensitive))
+            {
+                if (img.IsSensitive) _settings.SensitiveImagePaths.Add(img.FilePath);
+                else _settings.SensitiveImagePaths.Remove(img.FilePath);
+                SettingsService.Save(_settings);
+                ApplyFilter(); // Refresh if sensitivity changes
             }
         }
 
         private void NextImage()
         {
             if (SelectedImage == null || !FilteredImages.Any()) return;
-            int index = FilteredImages.IndexOf(SelectedImage);
-            if (index >= 0 && index < FilteredImages.Count - 1)
+            var idx = FilteredImages.IndexOf(SelectedImage);
+            if (idx < FilteredImages.Count - 1)
             {
-                SelectedImage = FilteredImages[index + 1];
+                SelectedImage = FilteredImages[idx + 1];
+                ResetZoom();
             }
         }
 
         private void PreviousImage()
         {
             if (SelectedImage == null || !FilteredImages.Any()) return;
-            int index = FilteredImages.IndexOf(SelectedImage);
-            if (index > 0)
+            var idx = FilteredImages.IndexOf(SelectedImage);
+            if (idx > 0)
             {
-                SelectedImage = FilteredImages[index - 1];
+                SelectedImage = FilteredImages[idx - 1];
+                ResetZoom();
             }
+        }
+
+        private void ZoomIn()
+        {
+            IsOriginalSize = true;
+            ZoomLevel = Math.Min(ZoomLevel + 0.2, 5.0);
+        }
+
+        private void ZoomOut()
+        {
+            IsOriginalSize = true;
+            ZoomLevel = Math.Max(ZoomLevel - 0.2, 0.2);
+        }
+
+        public void ResetZoom()
+        {
+            IsFitToWindow = true;
+        }
+
+        private void CancelSearch()
+        {
+            _searchCts?.Cancel();
+        }
+
+        private void ClearSelection()
+        {
+            lock (_allImages)
+            {
+                foreach (var img in _allImages)
+                {
+                    img.IsSelected = false;
+                }
+            }
+            OnPropertyChanged(nameof(SelectedCount));
+            OnPropertyChanged(nameof(HasSelection));
         }
     }
 }

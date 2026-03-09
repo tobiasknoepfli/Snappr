@@ -82,12 +82,35 @@ namespace Snappr.Services
             try
             {
                 var directories = ImageMetadataReader.ReadMetadata(filePath);
-                
-                // Get Date Taken
+                var metaPairs = new List<string>();
+
+                // Get EXIF SubIFD for camera settings
                 var subIfdDirectory = directories.OfType<ExifSubIfdDirectory>().FirstOrDefault();
-                if (subIfdDirectory != null && subIfdDirectory.TryGetDateTime(ExifDirectoryBase.TagDateTimeOriginal, out var dateTime))
+                if (subIfdDirectory != null)
                 {
-                    model.DateTaken = dateTime;
+                    if (subIfdDirectory.TryGetDateTime(ExifDirectoryBase.TagDateTimeOriginal, out var dateTime))
+                        model.DateTaken = dateTime;
+
+                    var iso = subIfdDirectory.GetString(ExifDirectoryBase.TagIsoEquivalent);
+                    var f = subIfdDirectory.GetString(ExifDirectoryBase.TagFNumber);
+                    var s = subIfdDirectory.GetString(ExifDirectoryBase.TagExposureTime);
+                    
+                    if (!string.IsNullOrEmpty(iso)) metaPairs.Add($"ISO {iso}");
+                    if (!string.IsNullOrEmpty(f)) metaPairs.Add($"f/{f}");
+                    if (!string.IsNullOrEmpty(s)) metaPairs.Add($"{s}s");
+                }
+
+                // Get EXIF IFD0 for Camera Model and dimensions
+                var ifd0Directory = directories.OfType<ExifIfd0Directory>().FirstOrDefault();
+                if (ifd0Directory != null)
+                {
+                    var make = ifd0Directory.GetString(ExifDirectoryBase.TagMake);
+                    var camModel = ifd0Directory.GetString(ExifDirectoryBase.TagModel);
+                    if (!string.IsNullOrEmpty(camModel)) metaPairs.Add(camModel);
+                    
+                    var w = ifd0Directory.GetString(ExifDirectoryBase.TagImageWidth);
+                    var h = ifd0Directory.GetString(ExifDirectoryBase.TagImageHeight);
+                    if (!string.IsNullOrEmpty(w) && !string.IsNullOrEmpty(h)) metaPairs.Add($"{w}x{h}");
                 }
 
                 // Get Keywords (IPTC)
@@ -97,44 +120,29 @@ namespace Snappr.Services
                     var keywords = iptcDirectory.GetStringArray(IptcDirectory.TagKeywords);
                     if (keywords != null) model.Keywords.AddRange(keywords);
 
-                    // Extract Location (City, Province, Country)
-                    // Extract Location (City, Province, Country) using standard IPTC tag IDs
                     var city = iptcDirectory.GetString(90); // City
-                    var province = iptcDirectory.GetString(95); // Province/State
+                    var prov = iptcDirectory.GetString(95); // Province/State
                     var country = iptcDirectory.GetString(101); // Country
-
-
                     
-                    var locationParts = new[] { city, province, country }.Where(s => !string.IsNullOrWhiteSpace(s));
+                    var locationParts = new[] { city, prov, country }.Where(s => !string.IsNullOrWhiteSpace(s));
                     model.Location = string.Join(", ", locationParts);
                 }
 
-                /* Temporarily disabled GetGeoLocation
-                var gpsDirectory = directories.OfType<GpsDirectory>().FirstOrDefault();
-                if (gpsDirectory != null)
-                {
-                    var location = gpsDirectory.GetGeoLocation();
-                    if (location != null)
-                    {
-                        model.Latitude = location.Latitude;
-                        model.Longitude = location.Longitude;
-                    }
-                }
-                */
-
-
-                
-                model.MetadataSummary = string.Join(" | ", directories.Select(d => d.Name));
+                model.MetadataSummary = string.Join(" | ", metaPairs);
                 if (!string.IsNullOrEmpty(model.Location))
                 {
-                    model.MetadataSummary += $" | {model.Location}";
+                    if (!string.IsNullOrEmpty(model.MetadataSummary)) model.MetadataSummary += " — ";
+                    model.MetadataSummary += model.Location;
+                }
+
+                if (string.IsNullOrEmpty(model.MetadataSummary))
+                {
+                    model.MetadataSummary = "Basic Image Data";
                 }
             }
-
             catch
             {
-                // Silently fail metadata extraction
-                model.MetadataSummary = "Metadata error";
+                model.MetadataSummary = "Metadata Error";
             }
 
             return model;

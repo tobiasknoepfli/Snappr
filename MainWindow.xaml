@@ -58,7 +58,6 @@
         </Style>
         <Style TargetType="ScrollBar">
             <Setter Property="Background" Value="#161616"/>
-            <Setter Property="Width" Value="10"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ScrollBar">
@@ -68,10 +67,12 @@
                                     <Thumb x:Name="Thumb">
                                         <Thumb.Style>
                                             <Style TargetType="Thumb">
+                                                <Setter Property="MinHeight" Value="30"/>
+                                                <Setter Property="MinWidth" Value="30"/>
                                                 <Setter Property="Template">
                                                     <Setter.Value>
                                                         <ControlTemplate TargetType="Thumb">
-                                                            <Border Background="#333" CornerRadius="5" Margin="2"/>
+                                                            <Border Background="#333" CornerRadius="7" Margin="2"/>
                                                         </ControlTemplate>
                                                     </Setter.Value>
                                                 </Setter>
@@ -80,7 +81,7 @@
                                                         <Setter Property="Template">
                                                             <Setter.Value>
                                                                 <ControlTemplate TargetType="Thumb">
-                                                                    <Border Background="#444" CornerRadius="5" Margin="1"/>
+                                                                    <Border Background="#444" CornerRadius="7" Margin="1"/>
                                                                 </ControlTemplate>
                                                             </Setter.Value>
                                                         </Setter>
@@ -95,6 +96,16 @@
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
+            <Style.Triggers>
+                <Trigger Property="Orientation" Value="Vertical">
+                    <Setter Property="Width" Value="14"/>
+                    <Setter Property="Height" Value="Auto"/>
+                </Trigger>
+                <Trigger Property="Orientation" Value="Horizontal">
+                    <Setter Property="Width" Value="Auto"/>
+                    <Setter Property="Height" Value="14"/>
+                </Trigger>
+            </Style.Triggers>
         </Style>
     </Window.Resources>
 
@@ -236,7 +247,8 @@
                                                 <TextBlock Text="• date=YYYY-MM-DD / month=N / year=YYYY"/>
                                                 <TextBlock Text="• datebefore=D / dateafter=D / datebetween=D-D"/>
                                                 <TextBlock Text="• &quot;keyword&quot; : Exact match (case insensitive)"/>
-                                                <TextBlock Text="Example: year=2023, folder=italy, &quot;DSC001.jpg&quot;" Margin="0,5,0,0" Foreground="#0078D4"/>
+                                                 <TextBlock Text="• private=on / sensitive=on : Show hidden pictures" Foreground="#FF4444"/>
+                                                 <TextBlock Text="Example: year=2023, folder=italy, sensitive=on" Margin="0,5,0,0" Foreground="#0078D4"/>
                                             </StackPanel>
                                         </ToolTip>
                                     </TextBox.ToolTip>
@@ -347,6 +359,17 @@
                                 <TextBlock Text="{Binding SearchProcessedCount}" Foreground="#0078D4" FontSize="10" FontWeight="Bold" Visibility="{Binding IsSearching, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                 <TextBlock Text=" / " Foreground="#666" FontSize="10" Visibility="{Binding IsSearching, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                 <TextBlock Text="{Binding SearchTotalCount}" Foreground="#666" FontSize="10" Visibility="{Binding IsSearching, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                <Button Content="Cancel" Command="{Binding CancelSearchCommand}" Foreground="#FF4444" Background="Transparent" BorderThickness="0" FontSize="10" FontWeight="Bold" Margin="10,0,0,0" Cursor="Hand" Visibility="{Binding IsSearching, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <Button.Style>
+                                        <Style TargetType="Button">
+                                            <Style.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter Property="Foreground" Value="White"/>
+                                                </Trigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
                                 <TextBlock Text="Indexing..." Foreground="#666" FontSize="10" Visibility="{Binding IsDeepScanning, Converter={StaticResource BooleanToVisibilityConverter}}">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
@@ -385,6 +408,14 @@
                             <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <Border x:Name="ItemBorder" Margin="5" Background="#1E1E1E" CornerRadius="8" Padding="5" Cursor="Hand" BorderThickness="2" BorderBrush="Transparent">
+                                         <Border.ToolTip>
+                                             <ToolTip Background="#222" Foreground="White" BorderBrush="#333">
+                                                 <StackPanel>
+                                                     <TextBlock Text="PICTURE SETTINGS" FontWeight="Bold" Margin="0,0,0,5"/>
+                                                     <CheckBox IsChecked="{Binding IsSensitive}" Content="Mark as Sensitive" Foreground="White" FontSize="14"/>
+                                                 </StackPanel>
+                                             </ToolTip>
+                                         </Border.ToolTip>
                                         <Border.InputBindings>
                                             <MouseBinding MouseAction="LeftDoubleClick" Command="{Binding DataContext.OpenPreviewCommand, RelativeSource={RelativeSource AncestorType=Window}}"/>
                                         </Border.InputBindings>
@@ -441,6 +472,7 @@
                     </Grid.RowDefinitions>
 
                     <TextBlock Grid.Row="0" Text="IMAGE DETAILS" Style="{StaticResource SectionHeader}"/>
+                    <CheckBox Grid.Row="0" IsChecked="{Binding SelectedImage.IsSensitive}" Content="Sensitive" HorizontalAlignment="Right" Foreground="#FF4444" VerticalAlignment="Center" Margin="0,0,0,10"/>
                     
                     <StackPanel Grid.Row="1" Margin="0,0,0,20">
                         <TextBlock Text="{Binding SelectedImage.FileName}" FontSize="18" FontWeight="Bold" Foreground="#DDD" TextWrapping="Wrap"/>
@@ -450,7 +482,10 @@
                     <ScrollViewer Grid.Row="2">
                         <StackPanel>
                             <TextBlock Text="KEYWORDS" FontSize="11" Foreground="#0078D4" FontWeight="Bold" Margin="0,0,0,5"/>
-                            <TextBlock Text="{Binding SelectedImage.DisplayKeywords}" TextWrapping="Wrap" Foreground="#AAA"/>
+                            <TextBlock Text="{Binding SelectedImage.DisplayKeywords}" TextWrapping="Wrap" Foreground="#AAA" Margin="0,0,0,15"/>
+
+                            <TextBlock Text="METADATA EXIF" FontSize="11" Foreground="#0078D4" FontWeight="Bold" Margin="0,0,0,5"/>
+                            <TextBlock Text="{Binding SelectedImage.MetadataSummary}" TextWrapping="Wrap" Foreground="#888" FontSize="10" Margin="0,0,0,15"/>
                             
                             <TextBlock Text="PATH" FontSize="11" Foreground="#0078D4" FontWeight="Bold" Margin="0,15,0,5"/>
                             <TextBlock Text="{Binding SelectedImage.FolderPath}" TextWrapping="Wrap" Foreground="#AAA" FontSize="10"/>
@@ -459,15 +494,27 @@
                         </StackPanel>
                     </ScrollViewer>
 
-                    <Border Grid.Row="3" Background="#1A1A1A" CornerRadius="8" Padding="15" Margin="0,20,0,0">
+                    <!-- Batch Actions (e.g., mark multiple as sensitive) -->
+                    <Border Grid.RowSpan="4" Background="#161616" BorderThickness="1" BorderBrush="#333" CornerRadius="8" Padding="15" Margin="-5"
+                            Visibility="{Binding HasSelection, Converter={StaticResource BooleanToVisibilityConverter}}">
                         <StackPanel>
-                            <TextBlock Text="EXPORT AS" Style="{StaticResource SectionHeader}" HorizontalAlignment="Center"/>
+                            <TextBlock Text="BATCH ACTIONS" Style="{StaticResource SectionHeader}"/>
+                            <TextBlock Text="{Binding SelectedCount, StringFormat='\{0\} images selected'}" FontSize="16" Foreground="#DDD" Margin="0,0,0,20"/>
+
+                            <TextBlock Text="PRIVACY" FontSize="11" Foreground="#FF4444" FontWeight="Bold" Margin="0,0,0,5"/>
+                            <UniformGrid Columns="2">
+                                <Button Content="Hide Selected" Style="{StaticResource ModernButton}" Command="{Binding SetSensitiveCommand}" CommandParameter="True" Background="#330000" Foreground="#FF4444"/>
+                                <Button Content="Show Selected" Style="{StaticResource ModernButton}" Command="{Binding SetSensitiveCommand}" CommandParameter="False" Background="#002200" Foreground="#44FF44"/>
+                            </UniformGrid>
+                            <TextBlock Text="Marking images as hidden will exclude them from normal search unless 'private=on' is used." FontSize="10" Foreground="#666" Margin="0,8,0,0" TextWrapping="Wrap"/>
+
+                            <TextBlock Text="EXPORT" FontSize="11" Foreground="#0078D4" FontWeight="Bold" Margin="0,25,0,5"/>
                             <UniformGrid Columns="2">
                                 <Button Content="Full Size" Style="{StaticResource ModernButton}" Command="{Binding ExportCommand}" CommandParameter="Full"/>
                                 <Button Content="Half Size" Style="{StaticResource ModernButton}" Command="{Binding ExportCommand}" CommandParameter="Half"/>
-                                <Button Content="Quarter" Style="{StaticResource ModernButton}" Command="{Binding ExportCommand}" CommandParameter="Quarter"/>
-                                <Button Content="Custom %" Style="{StaticResource ModernButton}" Command="{Binding ExportCommand}" CommandParameter="Custom"/>
                             </UniformGrid>
+                            <Button Content="Show in Explorer" Style="{StaticResource ModernButton}" Command="{Binding OpenInExplorerCommand}" Margin="0,15,0,0"/>
+
                         </StackPanel>
                     </Border>
                 </Grid>
@@ -482,8 +529,39 @@
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
                 
-                <Button HorizontalAlignment="Left" Content="← Close Preview" Style="{StaticResource ModernButton}" Command="{Binding ClosePreviewCommand}" Margin="20"/>
-                <TextBlock Grid.Row="0" HorizontalAlignment="Center" Text="{Binding SelectedImage.FileName}" FontSize="20" VerticalAlignment="Center"/>
+                <Grid Grid.Row="0" Margin="20,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel x:Name="LeftButtonsPlaceholder" Grid.Column="0" Orientation="Horizontal">
+                        <Button Content="← Close Preview" Style="{StaticResource ModernButton}" Command="{Binding ClosePreviewCommand}" Margin="0,0,10,0"/>
+                        <CheckBox IsChecked="{Binding IsOriginalSize}" Content="Full Res (1:1)" Foreground="#888" VerticalAlignment="Center" Cursor="Hand" Margin="0,0,15,0">
+                            <CheckBox.Style>
+                                <Style TargetType="CheckBox">
+                                    <Style.Triggers>
+                                        <Trigger Property="IsChecked" Value="True">
+                                            <Setter Property="Foreground" Value="#0078D4"/>
+                                        </Trigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </CheckBox.Style>
+                        </CheckBox>
+
+                        <!-- Zoom Controls -->
+                        <Button Content="−" Style="{StaticResource ModernButton}" Command="{Binding ZoomOutCommand}" Width="30" Padding="0" Margin="0,0,5,0" FontSize="18" FontWeight="Bold"/>
+                        <TextBlock Text="{Binding ZoomLevel, StringFormat=\{0:P0\}}" Foreground="#888" VerticalAlignment="Center" MinWidth="40" TextAlignment="Center"/>
+                        <Button Content="+" Style="{StaticResource ModernButton}" Command="{Binding ZoomInCommand}" Width="30" Padding="0" Margin="5,0,0,0" FontSize="18" FontWeight="Bold"/>
+                        <Button Content="Adjust to window size" Style="{StaticResource ModernButton}" Command="{Binding ResetZoomCommand}" Margin="15,0,0,0" FontSize="12" Padding="12,5"/>
+                    </StackPanel>
+
+                    <TextBlock Grid.Column="1" Text="{Binding SelectedImage.FileName}" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" HorizontalAlignment="Center" Foreground="#AAA" TextTrimming="CharacterEllipsis"/>
+                    
+                    <!-- Empty Column to balance the title in the center -->
+                    <Border Grid.Column="2" Width="{Binding ActualWidth, ElementName=LeftButtonsPlaceholder}"/>
+                </Grid>
 
                 <Grid Grid.Row="1" Margin="40">
                     <Grid.ColumnDefinitions>
@@ -516,7 +594,37 @@
                         </Button.Triggers>
                     </Button>
                     
-                    <Image Grid.Column="1" Source="{Binding SelectedImage.FilePath}" Stretch="Uniform" Margin="20"/>
+                    <ScrollViewer Grid.Column="1" Padding="10" PreviewMouseWheel="FullImage_PreviewMouseWheel">
+                        <ScrollViewer.Style>
+                            <Style TargetType="ScrollViewer">
+                                <Setter Property="HorizontalScrollBarVisibility" Value="Auto"/>
+                                <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsFitToWindow}" Value="True">
+                                        <Setter Property="HorizontalScrollBarVisibility" Value="Disabled"/>
+                                        <Setter Property="VerticalScrollBarVisibility" Value="Disabled"/>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ScrollViewer.Style>
+                        <Image Source="{Binding SelectedImage.FilePath}" 
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               RenderOptions.BitmapScalingMode="HighQuality">
+                            <Image.LayoutTransform>
+                                <ScaleTransform ScaleX="{Binding ZoomLevel}" ScaleY="{Binding ZoomLevel}"/>
+                            </Image.LayoutTransform>
+                            <Image.Style>
+                                <Style TargetType="Image">
+                                    <Setter Property="Stretch" Value="Uniform"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding IsOriginalSize}" Value="True">
+                                            <Setter Property="Stretch" Value="None"/>
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Image.Style>
+                        </Image>
+                    </ScrollViewer>
 
                     <Button Grid.Column="2" Content="&#x232A;" Style="{StaticResource ModernButton}" Command="{Binding NextImageCommand}" VerticalAlignment="Center" FontSize="30" Width="60" Height="60" Opacity="0.6" BorderThickness="1" BorderBrush="#444">
                         <Button.Resources>

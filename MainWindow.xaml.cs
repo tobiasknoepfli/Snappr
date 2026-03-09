@@ -75,4 +75,14 @@ public partial class MainWindow : Window
             else if (e.Key == Key.Escape) { vm.ClosePreviewCommand.Execute(null); e.Handled = true; }
         }
     }
+
+    private void FullImage_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (DataContext is MainViewModel vm && vm.IsFullImageMode)
+        {
+            if (e.Delta > 0) vm.ZoomInCommand.Execute(null);
+            else vm.ZoomOutCommand.Execute(null);
+            e.Handled = true;
+        }
+    }
 }
