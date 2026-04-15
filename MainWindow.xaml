@@ -1,4 +1,4 @@
-﻿<Window x:Class="Snappr.MainWindow"
+<Window x:Class="Snappr.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
@@ -491,6 +491,14 @@
                             <TextBlock Text="{Binding SelectedImage.FolderPath}" TextWrapping="Wrap" Foreground="#AAA" FontSize="10"/>
                             
                             <Button Content="Show in Explorer" Style="{StaticResource ModernButton}" Command="{Binding OpenInExplorerCommand}" Margin="0,15,0,0"/>
+
+                            <TextBlock Text="EXPORT" FontSize="11" Foreground="#0078D4" FontWeight="Bold" Margin="0,25,0,5"/>
+                            <UniformGrid Columns="2">
+                                <Button Content="Full Size" Style="{StaticResource ModernButton}" Command="{Binding ExportCommand}" CommandParameter="Full"/>
+                                <Button Content="Half Size" Style="{StaticResource ModernButton}" Command="{Binding ExportCommand}" CommandParameter="Half"/>
+                                <Button Content="1/4 Size" Style="{StaticResource ModernButton}" Command="{Binding ExportCommand}" CommandParameter="Quarter"/>
+                                <Button Content="10% Size" Style="{StaticResource ModernButton}" Command="{Binding ExportCommand}" CommandParameter="Ten"/>
+                            </UniformGrid>
                         </StackPanel>
                     </ScrollViewer>
 
@@ -512,6 +520,8 @@
                             <UniformGrid Columns="2">
                                 <Button Content="Full Size" Style="{StaticResource ModernButton}" Command="{Binding ExportCommand}" CommandParameter="Full"/>
                                 <Button Content="Half Size" Style="{StaticResource ModernButton}" Command="{Binding ExportCommand}" CommandParameter="Half"/>
+                                <Button Content="1/4 Size" Style="{StaticResource ModernButton}" Command="{Binding ExportCommand}" CommandParameter="Quarter"/>
+                                <Button Content="10% Size" Style="{StaticResource ModernButton}" Command="{Binding ExportCommand}" CommandParameter="Ten"/>
                             </UniformGrid>
                             <Button Content="Show in Explorer" Style="{StaticResource ModernButton}" Command="{Binding OpenInExplorerCommand}" Margin="0,15,0,0"/>
 

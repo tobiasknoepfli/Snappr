@@ -645,11 +645,10 @@ namespace Snappr.ViewModels
             double scale = 1.0;
             switch (mode)
             {
+                case "Full": scale = 1.0; break;
                 case "Half": scale = 0.5; break;
                 case "Quarter": scale = 0.25; break;
-                case "Custom":
-                    scale = 0.1; 
-                    break;
+                case "Ten": scale = 0.1; break;
                 default: scale = 1.0; break;
             }
 
